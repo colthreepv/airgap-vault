@@ -12,16 +12,26 @@ android {
         versionName "0.0.0"
         testInstrumentationRunner 'androidx.test.runner.AndroidJUnitRunner'
     }
+    if (project.hasProperty('airgapBaseVersion')) {
+        defaultConfig.versionName = project.property('airgapBaseVersion').toString()
+    }
     buildTypes {
         debug {
             applicationIdSuffix ".devtest"
-            versionNameSuffix "-devtest"
+            versionNameSuffix "-dev.1"
             buildConfigField "boolean", "APPIUM", "false"
         }
         release {
             minifyEnabled false
             proguardFiles getDefaultProguardFile('proguard-android.txt'), 'proguard-rules.pro'
             buildConfigField "boolean", "APPIUM", "false"
+        }
+        fork {
+            initWith release
+            applicationIdSuffix ".fork"
+            versionNameSuffix "-fork.1"
+            signingConfig signingConfigs.debug
+            matchingFallbacks = ['release']
         }
         appium {
             minifyEnabled false

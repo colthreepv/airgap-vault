@@ -1,5 +1,5 @@
 <?xml version='1.0' encoding='utf-8'?>
 <resources>
-    <string name="app_name">AirGap Vault Test</string>
-    <string name="title_activity_main">AirGap Vault Test</string>
+    <string name="app_name">AirGap Vault Dev</string>
+    <string name="title_activity_main">AirGap Vault Dev</string>
 </resources>
