@@ -150,7 +150,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        api-level: [30, 33, 34, 35, 36]
+        api-level: [33, 34, 35, 36]
         nav: [gestural, threebutton]
         app: [baseline, candidate]
     env:
@@ -164,10 +164,10 @@ jobs:
           repository: colthreepv/airgap-vault
           ref: ${{ github.sha }}
 
-      - name: Set up Node.js 22
+      - name: Set up Node.js 24
         uses: actions/setup-node@v4
         with:
-          node-version: 22
+          node-version: 24
 
       - name: Set up Android SDK and adb
         uses: android-actions/setup-android@v3
@@ -186,40 +186,54 @@ jobs:
           name: apk-${{ matrix.app }}
           path: artifacts
 
-      - name: Check for E2E runner
-        id: runner
+      - name: Require E2E runner
         run: |
-          if [ -f e2e/android-insets/run.mjs ]; then
-            echo 'available=true' >> "$GITHUB_OUTPUT"
-          else
-            echo 'available=false' >> "$GITHUB_OUTPUT"
-            mkdir -p "$RESULTS_PATH"
-            echo 'Skipped: e2e/android-insets/run.mjs is not present on the harness ref.' > "$RESULTS_PATH/SKIPPED.txt"
-          fi
+          mkdir -p "$RESULTS_PATH"
+          test -f e2e/android-insets/run.mjs || {
+            echo 'Required harness file e2e/android-insets/run.mjs is missing from this ref.' >&2
+            exit 2
+          }
 
       - name: Enable KVM access
-        if: steps.runner.outputs.available == 'true'
         run: |
-          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
           sudo udevadm control --reload-rules
           sudo udevadm trigger --name-match=kvm
 
       - name: Run Android inset scenario
         id: emulator
-        if: steps.runner.outputs.available == 'true'
         uses: reactivecircus/android-emulator-runner@v2
         with:
           api-level: ${{ matrix.api-level }}
           target: google_apis
           arch: x86_64
-          profile: pixel_2
+          profile: pixel_6
+          avd-name: airgap-insets
+          emulator-boot-timeout: 900
           disable-animations: true
-          emulator-options: -no-window -gpu swiftshader_indirect -no-snapshot -noaudio -no-boot-anim -camera-back none
+          emulator-options: -no-window -gpu swiftshader_indirect -no-snapshot -noaudio -no-boot-anim -camera-back emulated
+          pre-emulator-launch-script: |
+            set -euo pipefail
+            config="${ANDROID_AVD_HOME:-$HOME/.android/avd}/airgap-insets.avd/config.ini"
+            test -f "$config"
+            for setting in hw.lcd.width=1080 hw.lcd.height=2400 hw.lcd.density=420; do
+              key="${setting%%=*}"
+              if grep -q "^${key}=" "$config"; then
+                sed -i "s/^${key}=.*/${setting}/" "$config"
+              else
+                printf '%s\n' "$setting" >> "$config"
+              fi
+            done
           script: |
-            node e2e/android-insets/run.mjs --apk "$APK_PATH" --nav "${{ matrix.nav }}" --out "$RESULTS_PATH"
+            node e2e/android-insets/run.mjs \
+              --apk "$APK_PATH" \
+              --nav "${{ matrix.nav }}" \
+              --out "$RESULTS_PATH" \
+              --serial emulator-5554 \
+              --label "${{ matrix.app }}-api-${{ matrix.api-level }}-${{ matrix.nav }}"
 
       - name: Add scenario report to job summary
-        if: always() && steps.runner.outputs.available == 'true'
+        if: always()
         run: |
           report="$RESULTS_PATH/report.md"
           if [ -f "$report" ]; then
@@ -231,11 +245,10 @@ jobs:
       - name: Record matrix result
         if: always()
         env:
-          RUNNER_AVAILABLE: ${{ steps.runner.outputs.available }}
           EMULATOR_OUTCOME: ${{ steps.emulator.outcome }}
         run: |
-          if [ "$RUNNER_AVAILABLE" != 'true' ]; then
-            outcome='skipped (runner pending)'
+          if [ ! -f e2e/android-insets/run.mjs ]; then
+            outcome='failed (runner missing)'
           else
             outcome="$EMULATOR_OUTCOME"
           fi
@@ -254,6 +267,6 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: results-api-${{ matrix.api-level }}-${{ matrix.nav }}-${{ matrix.app }}
-          path: ${{ env.RESULTS_PATH }}
+          path: results/
           if-no-files-found: warn
           retention-days: 14
