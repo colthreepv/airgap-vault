@@ -28,9 +28,10 @@ const versionName = packageLine?.match(/\bversionName='([^']*)'/)?.[1]
 if (!applicationId || versionName === undefined) {
   throw new Error(`Could not read package name and version from ${apk}`)
 }
-const debuggableEntry = manifestTree.match(/android:debuggable(?:\([^)]*\))?\s*=\s*(true|false)/)
-if (debuggableEntry?.[1] !== 'true') {
-  throw new Error(`Expected the appium APK to be debuggable; found ${debuggableEntry?.[1] ?? 'no manifest flag'}`)
+const debuggableEntry = manifestTree.match(/(?:android:debuggable|0x0101000f)[^\n]*?(true|false|0xffffffff|0x00000000)/i)
+const debuggable = debuggableEntry?.[1].toLowerCase()
+if (debuggable !== 'true' && debuggable !== '0xffffffff') {
+  throw new Error(`Expected the appium APK to be debuggable; found ${debuggable ?? 'no manifest flag'}`)
 }
 
 const resolvedSha = execFileSync('git', ['rev-parse', 'HEAD'], {
