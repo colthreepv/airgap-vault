@@ -107,6 +107,7 @@ export class AppComponent implements AfterViewInit {
 
     if (this.platform.is('android')) {
       await EdgeToEdge.setBackgroundColor({ color: '#311B58' })
+      await EdgeToEdge.enable()
     }
 
     this.initChecks()
