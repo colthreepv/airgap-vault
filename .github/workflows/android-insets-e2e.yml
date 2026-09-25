@@ -1,0 +1,252 @@
+name: Android inset E2E
+
+on:
+  push:
+    branches:
+      - codex/android-inset-e2e
+    paths:
+      - .github/workflows/android-insets-e2e.yml
+      - e2e/android-insets/**
+  workflow_dispatch:
+    inputs:
+      baseline_ref:
+        description: Upstream app ref to use as the baseline
+        required: true
+        default: 5bae09fae68f1a6d53c6f363aac2529f0bd1aad3
+        type: string
+      candidate_ref:
+        description: Fork app ref to use as the candidate
+        required: true
+        default: codex/android-scanner-insets
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    name: Build ${{ matrix.app }} APK
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        app:
+          - baseline
+          - candidate
+    env:
+      APP_REPOSITORY: ${{ matrix.app == 'baseline' && 'airgap-it/airgap-vault' || 'colthreepv/airgap-vault' }}
+      APP_REF: ${{ matrix.app == 'baseline' && (github.event.inputs.baseline_ref || '5bae09fae68f1a6d53c6f363aac2529f0bd1aad3') || (github.event.inputs.candidate_ref || 'codex/android-scanner-insets') }}
+
+    steps:
+      - name: Check out app ref
+        uses: actions/checkout@v4
+        with:
+          repository: ${{ env.APP_REPOSITORY }}
+          ref: ${{ env.APP_REF }}
+          path: app
+
+      - name: Check out harness branch
+        uses: actions/checkout@v4
+        with:
+          repository: colthreepv/airgap-vault
+          ref: ${{ github.sha }}
+          path: harness
+
+      - name: Set up Node.js 20 and Yarn cache
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: yarn
+          cache-dependency-path: app/yarn.lock
+
+      - name: Set up Java 21
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: Install Android SDK packages and build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install --yes --no-install-recommends bzip2 build-essential pkg-config libjpeg-dev libcairo2-dev
+          sdkmanager 'platforms;android-35' 'build-tools;35.0.0' 'platform-tools'
+
+      - name: Set up Gradle cache
+        uses: gradle/actions/setup-gradle@v4
+
+      - name: Install JavaScript dependencies
+        working-directory: app
+        run: |
+          corepack enable
+          corepack prepare yarn@1.22.19 --activate
+          yarn install --frozen-lockfile
+
+      - name: Build production web assets
+        working-directory: app
+        run: |
+          yarn prepare-prod-build
+          yarn apply-diagnostic-modules
+          yarn jetifier
+          yarn build:signatures
+          yarn ionic build --prod
+          yarn cap sync android
+
+      - name: Assemble debuggable Appium APK
+        working-directory: app
+        run: >-
+          android/gradlew --project-dir "$GITHUB_WORKSPACE/app/android"
+          --init-script "$GITHUB_WORKSPACE/harness/e2e/android-insets/ci/appium-debuggable.init.gradle"
+          --no-daemon :app:assembleAppium
+
+      - name: Align and sign APK; write build info
+        working-directory: app
+        env:
+          HARNESS_APP: ${{ matrix.app }}
+        run: |
+          set -euo pipefail
+          build_tools="$(find "$ANDROID_HOME/build-tools" -mindepth 1 -maxdepth 1 -type d | sort -V | tail -n 1)"
+          unsigned_apk="android/app/build/outputs/apk/appium/app-appium-unsigned.apk"
+          test -f "$unsigned_apk"
+          mkdir -p "$GITHUB_WORKSPACE/dist"
+          apk="$GITHUB_WORKSPACE/dist/appium-${HARNESS_APP}.apk"
+          if "$build_tools/apksigner" verify "$unsigned_apk" >/dev/null 2>&1; then
+            cp "$unsigned_apk" "$apk"
+          else
+            "$build_tools/zipalign" -p -f 4 "$unsigned_apk" "$GITHUB_WORKSPACE/dist/appium-${HARNESS_APP}-aligned.apk"
+            "$build_tools/apksigner" sign \
+              --ks build/android/debug.keystore \
+              --ks-key-alias androiddebugkey \
+              --ks-pass pass:android \
+              --key-pass pass:android \
+              --out "$apk" \
+              "$GITHUB_WORKSPACE/dist/appium-${HARNESS_APP}-aligned.apk"
+          fi
+          node "$GITHUB_WORKSPACE/harness/e2e/android-insets/ci/write-build-info.mjs" \
+            "$apk" "$APP_REPOSITORY@$APP_REF" "$GITHUB_WORKSPACE/dist/build-info-${HARNESS_APP}.json"
+
+      - name: Upload ${{ matrix.app }} APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: apk-${{ matrix.app }}
+          path: |
+            dist/appium-${{ matrix.app }}.apk
+            dist/build-info-${{ matrix.app }}.json
+          if-no-files-found: error
+          retention-days: 14
+
+  e2e:
+    name: API ${{ matrix.api-level }} / ${{ matrix.nav }} / ${{ matrix.app }}
+    needs: build
+    runs-on: ubuntu-latest
+    continue-on-error: ${{ matrix.app == 'baseline' }}
+    strategy:
+      fail-fast: false
+      matrix:
+        api-level: [30, 33, 34, 35, 36]
+        nav: [gestural, threebutton]
+        app: [baseline, candidate]
+    env:
+      APK_PATH: artifacts/appium-${{ matrix.app }}.apk
+      RESULTS_PATH: results/api-${{ matrix.api-level }}/${{ matrix.nav }}/${{ matrix.app }}
+
+    steps:
+      - name: Check out harness branch
+        uses: actions/checkout@v4
+        with:
+          repository: colthreepv/airgap-vault
+          ref: ${{ github.sha }}
+
+      - name: Set up Node.js 22
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Set up Android SDK and adb
+        uses: android-actions/setup-android@v3
+
+      - name: Verify adb is on PATH
+        run: |
+          echo "$ANDROID_HOME/platform-tools" >> "$GITHUB_PATH"
+          export PATH="$ANDROID_HOME/platform-tools:$PATH"
+          adb version
+
+      - name: Download ${{ matrix.app }} APK
+        uses: actions/download-artifact@v4
+        with:
+          name: apk-${{ matrix.app }}
+          path: artifacts
+
+      - name: Check for E2E runner
+        id: runner
+        run: |
+          if [ -f e2e/android-insets/run.mjs ]; then
+            echo 'available=true' >> "$GITHUB_OUTPUT"
+          else
+            echo 'available=false' >> "$GITHUB_OUTPUT"
+            mkdir -p "$RESULTS_PATH"
+            echo 'Skipped: e2e/android-insets/run.mjs is not present on the harness ref.' > "$RESULTS_PATH/SKIPPED.txt"
+          fi
+
+      - name: Enable KVM access
+        if: steps.runner.outputs.available == 'true'
+        run: |
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
+
+      - name: Run Android inset scenario
+        id: emulator
+        if: steps.runner.outputs.available == 'true'
+        uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: ${{ matrix.api-level }}
+          target: google_apis
+          arch: x86_64
+          profile: pixel_2
+          disable-animations: true
+          emulator-options: -no-window -gpu swiftshader_indirect -no-snapshot -noaudio -no-boot-anim -camera-back none
+          script: |
+            node e2e/android-insets/run.mjs --apk "$APK_PATH" --nav "${{ matrix.nav }}" --out "$RESULTS_PATH"
+
+      - name: Add scenario report to job summary
+        if: always() && steps.runner.outputs.available == 'true'
+        run: |
+          report="$RESULTS_PATH/report.md"
+          if [ -f "$report" ]; then
+            cat "$report" >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo "Scenario did not produce $report." >> "$GITHUB_STEP_SUMMARY"
+          fi
+
+      - name: Record matrix result
+        if: always()
+        env:
+          RUNNER_AVAILABLE: ${{ steps.runner.outputs.available }}
+          EMULATOR_OUTCOME: ${{ steps.emulator.outcome }}
+        run: |
+          if [ "$RUNNER_AVAILABLE" != 'true' ]; then
+            outcome='skipped (runner pending)'
+          else
+            outcome="$EMULATOR_OUTCOME"
+          fi
+          expectation=''
+          if [ '${{ matrix.app }}' = baseline ]; then
+            expectation=' (baseline failure is expected evidence)'
+          fi
+          {
+            echo '| API | Navigation | App | Outcome |'
+            echo '| --- | --- | --- | --- |'
+            echo "| ${{ matrix.api-level }} | ${{ matrix.nav }} | ${{ matrix.app }} | ${outcome}${expectation} |"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload scenario results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: results-api-${{ matrix.api-level }}-${{ matrix.nav }}-${{ matrix.app }}
+          path: ${{ env.RESULTS_PATH }}
+          if-no-files-found: warn
+          retention-days: 14
