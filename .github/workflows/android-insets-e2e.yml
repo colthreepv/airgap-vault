@@ -67,6 +67,8 @@ jobs:
 
       - name: Set up Android SDK
         uses: android-actions/setup-android@v3
+        with:
+          packages: platform-tools
 
       - name: Install Android SDK packages and build dependencies
         run: |
@@ -166,6 +168,8 @@ jobs:
 
       - name: Set up Android SDK and adb
         uses: android-actions/setup-android@v3
+        with:
+          packages: platform-tools
 
       - name: Verify adb is on PATH
         run: |
