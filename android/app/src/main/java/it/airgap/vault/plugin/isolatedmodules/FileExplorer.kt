@@ -164,7 +164,9 @@ private class AssetsExplorer(private val context: Context) : StaticSourcesExplor
     override fun readJavaScriptEngineUtils(): ByteArray = context.assets.readBytes(JAVA_SCRIPT_ENGINE_UTILS)
     override fun readIsolatedModulesScript(): ByteArray = context.assets.readBytes(SCRIPT)
 
-    override fun listModules(): List<String> = context.assets.list(MODULES_DIR)?.toList() ?: emptyList()
+    override fun listModules(): List<String> = context.assets.list(MODULES_DIR)
+        ?.filter { module -> context.assets.list("$MODULES_DIR/$module")?.contains(MANIFEST_FILENAME) == true }
+        ?: emptyList()
 
     override fun readModuleFiles(module: JSModule.Asset, predicate: (String) -> Boolean): Sequence<ByteArray> =
         module.files
