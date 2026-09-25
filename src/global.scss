@@ -30,10 +30,10 @@
   }
 }
 
-/* FAB bottom padding fix for Android edge-to-edge display */
+/* Keep Ionic's 10px FAB offset and add any bottom inset the WebView still overlaps */
 .md {
   ion-fab.fab-vertical-bottom {
-    bottom: env(safe-area-inset-bottom, 0px);
+    bottom: calc(10px + var(--ion-safe-area-bottom, 0px));
   }
 }
 ion-label {
