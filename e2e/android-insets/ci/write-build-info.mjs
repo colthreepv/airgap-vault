@@ -21,11 +21,16 @@ if (!buildTools) throw new Error(`No Android build-tools found under ${buildTool
 
 const aapt = join(buildToolsRoot, buildTools, process.platform === 'win32' ? 'aapt.exe' : 'aapt')
 const badging = execFileSync(aapt, ['dump', 'badging', apk], { encoding: 'utf8' })
+const manifestTree = execFileSync(aapt, ['dump', 'xmltree', apk, 'AndroidManifest.xml'], { encoding: 'utf8' })
 const packageLine = badging.match(/^package:.*$/m)?.[0]
 const applicationId = packageLine?.match(/\bname='([^']+)'/)?.[1]
 const versionName = packageLine?.match(/\bversionName='([^']*)'/)?.[1]
 if (!applicationId || versionName === undefined) {
   throw new Error(`Could not read package name and version from ${apk}`)
+}
+const debuggableEntry = manifestTree.match(/android:debuggable(?:\([^)]*\))?\s*=\s*(true|false)/)
+if (debuggableEntry?.[1] !== 'true') {
+  throw new Error(`Expected the appium APK to be debuggable; found ${debuggableEntry?.[1] ?? 'no manifest flag'}`)
 }
 
 const resolvedSha = execFileSync('git', ['rev-parse', 'HEAD'], {
@@ -33,7 +38,6 @@ const resolvedSha = execFileSync('git', ['rev-parse', 'HEAD'], {
   encoding: 'utf8'
 }).trim()
 
-writeFileSync(
-  output,
-  `${JSON.stringify({ ref, resolvedSha, variant: 'appium', debuggable: true, applicationId, versionName }, null, 2)}\n`
-)
+const buildInfo = { ref, resolvedSha, variant: 'appium', debuggable: true, applicationId, versionName }
+writeFileSync(output, `${JSON.stringify(buildInfo, null, 2)}\n`)
+console.log(JSON.stringify(buildInfo))
