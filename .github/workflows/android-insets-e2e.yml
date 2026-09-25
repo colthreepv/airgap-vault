@@ -96,11 +96,14 @@ jobs:
           yarn ionic build --prod
           yarn cap sync android
 
+      - name: Enable Appium debugging in harness checkout
+        working-directory: app
+        run: node "$GITHUB_WORKSPACE/harness/e2e/android-insets/ci/enable-appium-debuggable.mjs" android/app/build.gradle
+
       - name: Assemble debuggable Appium APK
         working-directory: app
         run: >-
           android/gradlew --project-dir "$GITHUB_WORKSPACE/app/android"
-          --init-script "$GITHUB_WORKSPACE/harness/e2e/android-insets/ci/appium-debuggable.init.gradle"
           --no-daemon :app:assembleAppium
 
       - name: Align and sign APK; write build info
