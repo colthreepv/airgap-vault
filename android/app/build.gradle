@@ -14,6 +14,8 @@ android {
     }
     buildTypes {
         debug {
+            applicationIdSuffix ".devtest"
+            versionNameSuffix "-devtest"
             buildConfigField "boolean", "APPIUM", "false"
         }
         release {
