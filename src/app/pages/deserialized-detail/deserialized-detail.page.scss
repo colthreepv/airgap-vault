@@ -12,5 +12,11 @@
 }
 
 ion-content {
-  --padding-bottom: var(--ion-padding, 64px);
+  --padding-bottom: 144px;
+}
+
+// Keep the approval button above Android's navigation controls even if the
+// WebView has not yet received its system-bar inset.
+:host-context(.md) ion-content ion-fab.fab-vertical-bottom {
+  bottom: max(64px, calc(env(safe-area-inset-bottom, 0px) + 16px));
 }

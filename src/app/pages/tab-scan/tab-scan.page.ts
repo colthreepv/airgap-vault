@@ -47,12 +47,12 @@ export class TabScanPage extends ScanBasePage {
   }
 
   public async ionViewWillEnter(): Promise<void> {
-    await super.ionViewWillEnter()
-    this.resetScannerPage()
-    this.iacService.resetHandlers()
     if (this.platform.is('android')) {
       await EdgeToEdge.disable()
     }
+    await super.ionViewWillEnter()
+    this.resetScannerPage()
+    this.iacService.resetHandlers()
   }
 
   private resetScannerPage(): void {

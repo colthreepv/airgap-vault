@@ -1,7 +1,8 @@
 import { assertNever, UIAction, UIActionStatus, UiEventService, UIResource, UIResourceStatus } from '@airgap/angular-core'
 import { AirGapWallet, IAirGapTransaction, ProtocolSymbols } from '@airgap/coinlib-core'
 import { Component, OnDestroy } from '@angular/core'
-import { ModalController } from '@ionic/angular'
+import { ModalController, Platform } from '@ionic/angular'
+import { EdgeToEdge } from '@capawesome/capacitor-android-edge-to-edge-support'
 import { AlertOptions, LoadingOptions, ModalOptions, OverlayEventDetail } from '@ionic/core'
 import { Store } from '@ngrx/store'
 import { NavigationService } from 'src/app/services/navigation/navigation.service'
@@ -49,7 +50,8 @@ export class DeserializedDetailPage implements OnDestroy {
     private readonly store: Store<fromDeserializedDetail.State>,
     private readonly uiEventService: UiEventService,
     private readonly modalController: ModalController,
-    private readonly navigationService: NavigationService
+    private readonly navigationService: NavigationService,
+    private readonly platform: Platform
   ) {
     const state = this.navigationService.getState()
     if (state.transactionInfos && state.transactionInfos[0]) {
@@ -77,6 +79,12 @@ export class DeserializedDetailPage implements OnDestroy {
     this.modal$.pipe(takeUntil(this.ngDestroyed$)).subscribe(this.showOrDismissModal.bind(this))
 
     this.store.dispatch(actions.viewInitialization())
+  }
+
+  public async ionViewDidEnter(): Promise<void> {
+    if (this.platform.is('android')) {
+      await EdgeToEdge.enable()
+    }
   }
 
   public ngOnDestroy(): void {
