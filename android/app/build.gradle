@@ -15,10 +15,13 @@ android {
     if (project.hasProperty('airgapBaseVersion')) {
         defaultConfig.versionName = project.property('airgapBaseVersion').toString()
     }
+    if (project.hasProperty('airgapBuildNumber')) {
+        defaultConfig.versionCode = Integer.parseInt(project.property('airgapBuildNumber').toString())
+    }
     buildTypes {
         debug {
             applicationIdSuffix ".devtest"
-            versionNameSuffix "-dev.1"
+            versionNameSuffix "-dev.2"
             buildConfigField "boolean", "APPIUM", "false"
         }
         release {
@@ -29,7 +32,7 @@ android {
         fork {
             initWith release
             applicationIdSuffix ".fork"
-            versionNameSuffix "-fork.1"
+            versionNameSuffix "-fork.2"
             signingConfig signingConfigs.debug
             matchingFallbacks = ['release']
         }
