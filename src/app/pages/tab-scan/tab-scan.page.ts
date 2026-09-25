@@ -1,6 +1,7 @@
 import { IACHandlerStatus, IACMessageTransport, PermissionsService, QrScannerService } from '@airgap/angular-core'
 import { PercentPipe } from '@angular/common'
 import { Component, Inject, NgZone, ViewChild } from '@angular/core'
+import { Router } from '@angular/router'
 import { Platform } from '@ionic/angular'
 import { ZXingScannerComponent } from '@zxing/ngx-scanner'
 import { SecurityUtilsPlugin } from 'src/app/capacitor-plugins/definitions'
@@ -33,6 +34,7 @@ export class TabScanPage extends ScanBasePage {
     permissionsProvider: PermissionsService,
     @Inject(SECURITY_UTILS_PLUGIN) securityUtils: SecurityUtilsPlugin,
     private readonly iacService: IACService,
+    private readonly router: Router,
     private readonly ngZone: NgZone // private readonly navigationService: NavigationService
   ) {
     super(platform, scanner, permissionsProvider, securityUtils)
@@ -46,6 +48,12 @@ export class TabScanPage extends ScanBasePage {
     await super.ionViewWillEnter()
     this.resetScannerPage()
     this.iacService.resetHandlers()
+  }
+
+  public startScan(): void {
+    if (this.router.url.startsWith('/tabs/tab-scan')) {
+      super.startScan()
+    }
   }
 
   private resetScannerPage(): void {

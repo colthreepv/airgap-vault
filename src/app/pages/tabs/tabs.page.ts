@@ -1,5 +1,6 @@
 import { Component } from '@angular/core'
 import { IonTabs } from '@ionic/angular'
+import { QrScannerService } from '@airgap/angular-core'
 
 @Component({
   selector: 'airgap-tabs',
@@ -9,14 +10,25 @@ import { IonTabs } from '@ionic/angular'
 export class TabsPage {
   private activeTab?: HTMLElement
 
-  constructor() {}
+  constructor(private readonly scanner: QrScannerService) {}
 
   tabChange(tabsRef: IonTabs) {
+    if (tabsRef.getSelected() !== 'tab-scan') {
+      if (this.activeTab?.tagName === 'AIRGAP-TAB-SCAN') {
+        this.propagateToActiveTab('ionViewWillLeave')
+      }
+      this.scanner.destroy()
+    }
     this.activeTab = tabsRef?.outlet?.activatedView?.element
   }
 
   ionViewWillEnter() {
     this.propagateToActiveTab('ionViewWillEnter')
+  }
+
+  ionViewWillLeave() {
+    this.propagateToActiveTab('ionViewWillLeave')
+    this.scanner.destroy()
   }
 
   private propagateToActiveTab(eventName: string) {

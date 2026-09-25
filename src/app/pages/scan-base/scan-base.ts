@@ -20,6 +20,8 @@ export class ScanBasePage {
   public readonly isElectron: boolean
   public readonly isBrowser: boolean
 
+  private scannerActive: boolean = false
+
   constructor(
     protected platform: Platform,
     protected scanner: QrScannerService,
@@ -32,8 +34,12 @@ export class ScanBasePage {
   }
 
   public async ionViewWillEnter(): Promise<void> {
+    this.scannerActive = true
     if (this.isMobile || this.isElectron) {
       await this.platform.ready()
+      if (!this.scannerActive) {
+        return
+      }
       await this.checkCameraPermissionsAndActivate()
     }
   }
@@ -51,6 +57,10 @@ export class ScanBasePage {
   public async checkCameraPermissionsAndActivate(): Promise<void> {
     const permission: PermissionStatus = await this.permissionsProvider.hasCameraPermission()
 
+    if (!this.scannerActive) {
+      return
+    }
+
     if (permission === PermissionStatus.GRANTED) {
       this._hasCameraPermission.next(true)
       this.startScan()
@@ -60,7 +70,7 @@ export class ScanBasePage {
   }
 
   public ionViewDidEnter(): void {
-    if (this.isBrowser) {
+    if (this.isBrowser && this.scannerActive) {
       this._hasCameraPermission.next(true)
       this.startScanBrowser()
     }
@@ -71,6 +81,7 @@ export class ScanBasePage {
   }
 
   protected stopScan() {
+    this.scannerActive = false
     if (this.isMobile) {
       this.scanner.destroy()
     } else if (this.zxingScanner) {
@@ -79,6 +90,9 @@ export class ScanBasePage {
   }
 
   public startScan(): void {
+    if (!this.scannerActive) {
+      return
+    }
     if (this.isMobile) {
       this.startScanMobile()
     } else {
@@ -93,11 +107,15 @@ export class ScanBasePage {
   private startScanMobile() {
     this.scanner.scan(
       (text) => {
-        this.checkScan(text)
+        if (this.scannerActive) {
+          this.checkScan(text)
+        }
       },
       (error) => {
-        console.warn(error)
-        this.startScan()
+        if (this.scannerActive) {
+          console.warn(error)
+          this.startScan()
+        }
       }
     )
   }
