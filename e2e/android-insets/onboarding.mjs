@@ -41,25 +41,54 @@ const probe = (cdp) =>
 
 const WORD_COUNT = "__visible('.secret--container__inner ion-button').map(__text).filter(function (t) { return /[a-z]/.test(t) }).length"
 
+// Text typed so far for the current word, as shown above the keyboard. The
+// span is empty (zero width) between words, so read it through its container.
+const TYPED = "(function () { var c = __visible('.input--container').pop(); if (!c) return null; var s = c.querySelector('span'); return s ? (s.textContent || '').trim() : '' })()"
+const keyReady = (letter) =>
+  "(function () { var k = document.getElementById('key-" + letter + "'); return !!k && __shown(k) && !k.disabled && !k.hasAttribute('disabled') })()"
+const clickKey = (letter) => "(function () { document.getElementById('key-" + letter + "').click(); return true })()"
+const clickSuggestion = (word) =>
+  "(function () { var s = __visible('.suggestion--container ion-button').filter(function (b) { return __text(b) === " + JSON.stringify(word) + " })[0]; s && s.click(); return !!s })()"
+
+async function poll(cdp, expr, sleep, timeout) {
+  const end = Date.now() + timeout
+  for (;;) {
+    const v = await cdp.eval(expr).catch(() => undefined)
+    if (v) return v
+    if (Date.now() > end) return v
+    await sleep(100)
+  }
+}
+
+// Types the mnemonic on Vault's own keyboard. Every step waits for the page to
+// reflect the previous one, so slow emulators (CI without GPU) do not drop or
+// double letters: the keyboard renders late after navigation, and each key
+// press repaints it.
 async function typeMnemonic(cdp, words, sleep) {
+  if (!(await poll(cdp, keyReady(words[0][0]), sleep, 20_000))) throw new Error('mnemonic keyboard did not appear')
   for (let i = 0; i < words.length; i++) {
     const word = words[i]
+    const fail = (why) => new Error('could not enter word ' + (i + 1) + ' of the test mnemonic: ' + why)
     const before = await cdp.eval(WORD_COUNT)
-    let after = before
-    for (const letter of word) {
-      const ok = await cdp.eval("(function () { var k = document.getElementById('key-" + letter + "'); if (!k || k.disabled) return false; k.click(); return true })()")
-      if (!ok) break
-      await sleep(40)
-      after = await cdp.eval(WORD_COUNT)
-      if (after > before) break
+    const committed = () => poll(cdp, WORD_COUNT + ' > ' + before, sleep, 3000)
+    if ((await poll(cdp, TYPED + " === ''", sleep, 3000)) !== true) throw fail('input not empty')
+    let done = false
+    for (let n = 0; n < word.length && !done; n++) {
+      // Several words share the prefix: pick the exact suggestion once shown.
+      if (n > 0 && (await cdp.eval(clickSuggestion(word)))) {
+        done = await committed()
+        break
+      }
+      if (!(await poll(cdp, keyReady(word[n]), sleep, 3000))) throw fail('key ' + word[n] + ' disabled after ' + word.slice(0, n))
+      await cdp.eval(clickKey(word[n]))
+      // Either the prefix shows up, or the word was completed and committed.
+      const prefix = JSON.stringify(word.slice(0, n + 1))
+      const moved = await poll(cdp, '(' + TYPED + ' === ' + prefix + ') || (' + WORD_COUNT + ' > ' + before + ')', sleep, 3000)
+      if (!moved) throw fail('letter ' + word[n] + ' not registered')
+      if (await cdp.eval(WORD_COUNT + ' > ' + before)) done = true
     }
-    if (after <= before) {
-      // Several words share the prefix: pick the exact suggestion.
-      await cdp.eval("(function () { var s = __visible('.suggestion--container ion-button').filter(function (b) { return __text(b) === '" + word + "' })[0]; s && s.click(); return !!s })()")
-      await sleep(150)
-      after = await cdp.eval(WORD_COUNT)
-    }
-    if (after <= before) throw new Error('could not enter word ' + (i + 1) + ' of the test mnemonic')
+    if (!done && !(await cdp.eval(clickSuggestion(word)))) throw fail('no suggestion for ' + word)
+    if (!done && !(await committed())) throw fail('word not committed')
   }
 }
 
