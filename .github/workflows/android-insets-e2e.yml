@@ -146,6 +146,7 @@ jobs:
     name: API ${{ matrix.api-level }} / ${{ matrix.nav }} / ${{ matrix.app }}
     needs: build
     runs-on: ubuntu-latest
+    timeout-minutes: 45
     continue-on-error: ${{ matrix.app == 'baseline' }}
     strategy:
       fail-fast: false
