@@ -581,3 +581,6 @@ try {
   writeReports(error)
   process.exitCode = 2
 }
+// An open CDP socket or a pending timer would keep Node alive after a harness
+// error; the reports are already written synchronously, so exit explicitly.
+process.exit(process.exitCode)
