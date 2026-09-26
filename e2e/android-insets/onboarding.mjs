@@ -80,10 +80,18 @@ async function typeMnemonic(cdp, words, sleep) {
         break
       }
       if (!(await poll(cdp, keyReady(word[n]), sleep, 3000))) throw fail('key ' + word[n] + ' disabled after ' + word.slice(0, n))
-      await cdp.eval(clickKey(word[n]))
       // Either the prefix shows up, or the word was completed and committed.
       const prefix = JSON.stringify(word.slice(0, n + 1))
-      const moved = await poll(cdp, '(' + TYPED + ' === ' + prefix + ') || (' + WORD_COUNT + ' > ' + before + ')', sleep, 3000)
+      const movedExpr = '(' + TYPED + ' === ' + prefix + ') || (' + WORD_COUNT + ' > ' + before + ')'
+      let moved = false
+      // Right after navigation the key can exist before Angular handles its
+      // click. Retry only while the typed text is still the old prefix, so a
+      // letter is never entered twice.
+      for (let attempt = 0; attempt < 4 && !moved; attempt++) {
+        if (attempt > 0 && (await cdp.eval(TYPED)) !== word.slice(0, n)) break
+        await cdp.eval(clickKey(word[n]))
+        moved = await poll(cdp, movedExpr, sleep, 2500)
+      }
       if (!moved) throw fail('letter ' + word[n] + ' not registered')
       if (await cdp.eval(WORD_COUNT + ' > ' + before)) done = true
     }
