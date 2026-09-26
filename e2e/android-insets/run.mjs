@@ -147,18 +147,33 @@ function webViewBounds() {
   return { left: +m[1], top: +m[2], right: +m[3], bottom: +m[4] }
 }
 
-async function ensureUnlocked() {
-  sh('svc power stayon true', { allowFail: true })
-  sh('input keyevent KEYCODE_WAKEUP', { allowFail: true })
-  sh('wm dismiss-keyguard', { allowFail: true })
-  await sleep(500)
-  if (/Keyguard|NotificationShade|StatusBar|Bouncer/i.test(currentFocus())) {
-    sh('input keyevent 82', { allowFail: true })
-    await sleep(700)
+const KEYGUARD = /Keyguard|NotificationShade|StatusBar|Bouncer/i
+
+// Unlocks the lock screen with the device PIN. Recent Android versions only
+// show the PIN bouncer after a swipe up, so typing straight away does nothing.
+async function unlockKeyguard() {
+  for (let attempt = 0; attempt < 3; attempt++) {
+    sh('input keyevent KEYCODE_WAKEUP', { allowFail: true })
+    sh('wm dismiss-keyguard', { allowFail: true })
+    await sleep(500)
+    if (!KEYGUARD.test(currentFocus())) return true
+    const size = sh('wm size').match(/(\d+)x(\d+)/)
+    const [w, h] = size ? [Number(size[1]), Number(size[2])] : [1080, 2400]
+    sh('input swipe ' + Math.round(w / 2) + ' ' + Math.round(h * 0.8) + ' ' + Math.round(w / 2) + ' ' + Math.round(h * 0.25) + ' 250', { allowFail: true })
+    await sleep(800)
     sh('input text ' + opts.pin, { allowFail: true })
     sh('input keyevent 66', { allowFail: true })
-    await sleep(1000)
+    await sleep(1200)
+    if (!KEYGUARD.test(currentFocus())) return true
   }
+  return !KEYGUARD.test(currentFocus())
+}
+
+async function ensureUnlocked() {
+  sh('svc power stayon true', { allowFail: true })
+  // Keep the screen on for the whole run so the lock screen cannot come back.
+  sh('settings put system screen_off_timeout 2147483647', { allowFail: true })
+  if (!(await unlockKeyguard())) throw new Error('could not unlock the lock screen with PIN ' + opts.pin)
 }
 
 function ensureDevicePin() {
@@ -171,6 +186,11 @@ async function answerAuthPrompt(timeout = 8000) {
   const end = Date.now() + timeout
   while (Date.now() < end) {
     const f = currentFocus()
+    if (f && KEYGUARD.test(f)) {
+      // The lock screen came back (screen timeout or a fresh PIN): unlock it.
+      await unlockKeyguard()
+      return true
+    }
     if (f && !f.startsWith(PKG + '/') && /(ConfirmDeviceCredential|ConfirmLock|Biometric|AuthContainer|systemui|settings|Keyguard)/i.test(f)) {
       await sleep(600)
       sh('input text ' + opts.pin, { allowFail: true })
