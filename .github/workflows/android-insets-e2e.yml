@@ -156,6 +156,10 @@ jobs:
     env:
       APK_PATH: artifacts/appium-${{ matrix.app }}.apk
       RESULTS_PATH: results/api-${{ matrix.api-level }}/${{ matrix.nav }}/${{ matrix.app }}
+      MATRIX_API: ${{ matrix.api-level }}
+      MATRIX_NAV: ${{ matrix.nav }}
+      MATRIX_APP: ${{ matrix.app }}
+      AVD_NAME: airgap-insets
 
     steps:
       - name: Check out harness branch
@@ -212,35 +216,9 @@ jobs:
           emulator-boot-timeout: 900
           disable-animations: true
           emulator-options: -no-window -gpu swiftshader_indirect -no-snapshot -noaudio -no-boot-anim -camera-back emulated
-          pre-emulator-launch-script: |
-            set -euo pipefail
-            config="${ANDROID_AVD_HOME:-$HOME/.android/avd}/airgap-insets.avd/config.ini"
-            test -f "$config"
-            for setting in hw.lcd.width=1080 hw.lcd.height=2400 hw.lcd.density=420; do
-              key="${setting%%=*}"
-              if grep -q "^${key}=" "$config"; then
-                sed -i "s/^${key}=.*/${setting}/" "$config"
-              else
-                printf '%s\n' "$setting" >> "$config"
-              fi
-            done
-          script: |
-            node e2e/android-insets/run.mjs \
-              --apk "$APK_PATH" \
-              --nav "${{ matrix.nav }}" \
-              --out "$RESULTS_PATH" \
-              --serial emulator-5554 \
-              --label "${{ matrix.app }}-api-${{ matrix.api-level }}-${{ matrix.nav }}"
-
-      - name: Add scenario report to job summary
-        if: always()
-        run: |
-          report="$RESULTS_PATH/report.md"
-          if [ -f "$report" ]; then
-            cat "$report" >> "$GITHUB_STEP_SUMMARY"
-          else
-            echo "Scenario did not produce $report." >> "$GITHUB_STEP_SUMMARY"
-          fi
+          # The action runs each script line as its own 'sh -c'; keep these single-line.
+          pre-emulator-launch-script: bash e2e/android-insets/ci/configure-avd.sh
+          script: bash e2e/android-insets/ci/run-in-emulator.sh
 
       - name: Record matrix result
         if: always()
@@ -249,8 +227,10 @@ jobs:
         run: |
           if [ ! -f e2e/android-insets/run.mjs ]; then
             outcome='failed (runner missing)'
+          elif [ -f "$RESULTS_PATH/exit-code" ]; then
+            outcome="$EMULATOR_OUTCOME, run.mjs exit $(cat "$RESULTS_PATH/exit-code")"
           else
-            outcome="$EMULATOR_OUTCOME"
+            outcome="$EMULATOR_OUTCOME (run.mjs did not run)"
           fi
           expectation=''
           if [ '${{ matrix.app }}' = baseline ]; then
