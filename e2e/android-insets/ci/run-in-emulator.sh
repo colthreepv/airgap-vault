@@ -4,7 +4,8 @@
 # 'sh -c', so the whole per-job scenario lives here.
 #
 # Inputs (environment): APK_PATH, RESULTS_PATH, MATRIX_API, MATRIX_NAV, MATRIX_APP.
-# Optional: RUN_TIMEOUT (default 15m) bounds run.mjs.
+# Optional: RUN_TIMEOUT (default 15m) bounds run.mjs; exceeding it counts as a
+# harness error.
 # Exit code: the exit code of run.mjs (0 pass, 1 assertion failures, 2 harness
 # error), so a candidate failure fails the job.
 set -uo pipefail
@@ -39,16 +40,8 @@ timeout --kill-after=30s "$run_timeout" node e2e/android-insets/run.mjs \
   --label "$label" 2>&1 | tee "$RESULTS_PATH/run.log"
 status="${PIPESTATUS[0]}"
 if [ "$status" = 124 ] || [ "$status" = 137 ]; then
-  # run.mjs can write its report and then fail to exit; recover its verdict.
-  echo "run.mjs did not exit within $run_timeout (status $status)"
-  status="$(node -e '
-    const fs = require("fs")
-    try {
-      const r = JSON.parse(fs.readFileSync(process.argv[1], "utf8"))
-      console.log(r.error ? 2 : r.failed > 0 || r.passed === 0 ? 1 : 0)
-    } catch { console.log(2) }
-  ' "$RESULTS_PATH/report.json")"
-  echo "timed out; verdict from report.json: $status" >> "$RESULTS_PATH/run.log"
+  echo "run.mjs did not exit within $run_timeout" | tee -a "$RESULTS_PATH/run.log"
+  status=2
 fi
 echo "$status" > "$RESULTS_PATH/exit-code"
 echo "run.mjs exit code: $status"
